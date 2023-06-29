@@ -42,6 +42,7 @@
         <module>nifi-toolkit</module>
         <module>nifi-manifest</module>
         <module>c2</module>
+        <module>nifi-nar-bundles/nifi-custom-processors-bundle</module>
     </modules>
     <url>https://nifi.apache.org</url>
     <organization>
