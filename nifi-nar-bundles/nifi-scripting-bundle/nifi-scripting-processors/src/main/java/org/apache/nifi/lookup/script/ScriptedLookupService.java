@@ -49,22 +49,22 @@ import java.util.Set;
 )
 public class ScriptedLookupService extends BaseScriptedLookupService implements LookupService<Object> {
 
-    @Override
-    @SuppressWarnings("unchecked")
-    public Set<String> getRequiredKeys() {
-        return lookupService.get().getRequiredKeys();
-    }
+  @Override
+  @SuppressWarnings("unchecked")
+  public Set<String> getRequiredKeys() {
+    return lookupService.get().getRequiredKeys();
+  }
 
-    @Override
-    public Class<?> getValueType() {
-        // Delegate the getValueType() call to the scripted LookupService
-        return lookupService.get().getValueType();
-    }
+  @Override
+  public Class<?> getValueType() {
+    // Delegate the getValueType() call to the scripted LookupService
+    return lookupService.get().getValueType();
+  }
 
-    @Override
-    @SuppressWarnings("unchecked")
-    public Optional<Object> lookup(Map<String, Object> coordinates) throws LookupFailureException {
-        // Delegate the lookup() call to the scripted LookupService
-        return lookupService.get().lookup(coordinates);
-    }
+  @Override
+  @SuppressWarnings("unchecked")
+  public Optional<Object> lookup(Map<String, Object> coordinates) throws LookupFailureException {
+    // Delegate the lookup() call to the scripted LookupService
+    return lookupService.get().lookup(coordinates);
+  }
 }

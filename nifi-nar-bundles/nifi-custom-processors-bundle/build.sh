@@ -18,6 +18,7 @@ mv target/*.nar "${NIFI_LIB_DIR}"
 "${NIFI_BIN_DIR}/nifi.sh" stop
 
 # Start NiFi
-"${NIFI_BIN_DIR}/nifi.sh" start
+"${NIFI_BIN_DIR}/nifi.sh" start --illegal-access=warn
+
 
 

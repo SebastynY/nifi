@@ -37,12 +37,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 @Tags({"lookup", "cache", "enrich", "join", "rdbms", "database", "reloadable", "key", "value"})
@@ -50,125 +45,125 @@ import java.util.concurrent.TimeUnit;
         "the specified lookup value column is returned. Only one value will be returned for each lookup, duplicate database entries are ignored.")
 public class SimpleDatabaseLookupService extends AbstractDatabaseLookupService implements StringLookupService {
 
-    private volatile Cache<Tuple<String, Object>, String> cache;
+  private volatile Cache<Tuple<String, Object>, String> cache;
 
-    static final PropertyDescriptor LOOKUP_VALUE_COLUMN =
-            new PropertyDescriptor.Builder()
-                    .name("lookup-value-column")
-                    .displayName("Lookup Value Column")
-                    .description("The column whose value will be returned when the Lookup value is matched")
-                    .required(true)
-                    .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-                    .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
-                    .build();
+  static final PropertyDescriptor LOOKUP_VALUE_COLUMN =
+          new PropertyDescriptor.Builder()
+                  .name("lookup-value-column")
+                  .displayName("Lookup Value Column")
+                  .description("The column whose value will be returned when the Lookup value is matched")
+                  .required(true)
+                  .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+                  .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+                  .build();
 
-    @Override
-    protected void init(final ControllerServiceInitializationContext context) {
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(DBCP_SERVICE);
-        properties.add(TABLE_NAME);
-        properties.add(LOOKUP_KEY_COLUMN);
-        properties.add(LOOKUP_VALUE_COLUMN);
-        properties.add(CACHE_SIZE);
-        properties.add(CLEAR_CACHE_ON_ENABLED);
-        properties.add(CACHE_EXPIRATION);
-        this.properties = Collections.unmodifiableList(properties);
+  @Override
+  protected void init(final ControllerServiceInitializationContext context) {
+    final List<PropertyDescriptor> properties = new ArrayList<>();
+    properties.add(DBCP_SERVICE);
+    properties.add(TABLE_NAME);
+    properties.add(LOOKUP_KEY_COLUMN);
+    properties.add(LOOKUP_VALUE_COLUMN);
+    properties.add(CACHE_SIZE);
+    properties.add(CLEAR_CACHE_ON_ENABLED);
+    properties.add(CACHE_EXPIRATION);
+    this.properties = Collections.unmodifiableList(properties);
+  }
+
+  @OnEnabled
+  public void onEnabled(final ConfigurationContext context) {
+    this.dbcpService = context.getProperty(DBCP_SERVICE).asControllerService(DBCPService.class);
+    this.lookupKeyColumn = context.getProperty(LOOKUP_KEY_COLUMN).evaluateAttributeExpressions().getValue();
+    int cacheSize = context.getProperty(CACHE_SIZE).evaluateAttributeExpressions().asInteger();
+    boolean clearCache = context.getProperty(CLEAR_CACHE_ON_ENABLED).asBoolean();
+    final long durationNanos = context.getProperty(CACHE_EXPIRATION).isSet() ? context.getProperty(CACHE_EXPIRATION).evaluateAttributeExpressions().asTimePeriod(TimeUnit.NANOSECONDS) : 0L;
+    if (this.cache == null || (cacheSize > 0 && clearCache)) {
+      if (durationNanos > 0) {
+        this.cache = Caffeine.newBuilder()
+                .maximumSize(cacheSize)
+                .expireAfter(new Expiry<Tuple<String, Object>, Object>() {
+                  @Override
+                  public long expireAfterCreate(Tuple<String, Object> stringObjectTuple, Object value, long currentTime) {
+                    return durationNanos;
+                  }
+
+                  @Override
+                  public long expireAfterUpdate(Tuple<String, Object> stringObjectTuple, Object value, long currentTime, long currentDuration) {
+                    return currentDuration;
+                  }
+
+                  @Override
+                  public long expireAfterRead(Tuple<String, Object> stringObjectTuple, Object value, long currentTime, long currentDuration) {
+                    return currentDuration;
+                  }
+                })
+                .build();
+      } else {
+        this.cache = Caffeine.newBuilder()
+                .maximumSize(cacheSize)
+                .build();
+      }
+    }
+  }
+
+  @Override
+  public Optional<String> lookup(Map<String, Object> coordinates) throws LookupFailureException {
+    return lookup(coordinates, null);
+  }
+
+  @Override
+  public Optional<String> lookup(Map<String, Object> coordinates, Map<String, String> context) throws LookupFailureException {
+    if (coordinates == null) {
+      return Optional.empty();
     }
 
-    @OnEnabled
-    public void onEnabled(final ConfigurationContext context) {
-        this.dbcpService = context.getProperty(DBCP_SERVICE).asControllerService(DBCPService.class);
-        this.lookupKeyColumn = context.getProperty(LOOKUP_KEY_COLUMN).evaluateAttributeExpressions().getValue();
-        int cacheSize = context.getProperty(CACHE_SIZE).evaluateAttributeExpressions().asInteger();
-        boolean clearCache = context.getProperty(CLEAR_CACHE_ON_ENABLED).asBoolean();
-        final long durationNanos = context.getProperty(CACHE_EXPIRATION).isSet() ? context.getProperty(CACHE_EXPIRATION).evaluateAttributeExpressions().asTimePeriod(TimeUnit.NANOSECONDS) : 0L;
-        if (this.cache == null || (cacheSize > 0 && clearCache)) {
-            if (durationNanos > 0) {
-                this.cache = Caffeine.newBuilder()
-                        .maximumSize(cacheSize)
-                        .expireAfter(new Expiry<Tuple<String, Object>, Object>() {
-                            @Override
-                            public long expireAfterCreate(Tuple<String, Object> stringObjectTuple, Object value, long currentTime) {
-                                return durationNanos;
-                            }
-
-                            @Override
-                            public long expireAfterUpdate(Tuple<String, Object> stringObjectTuple, Object value, long currentTime, long currentDuration) {
-                                return currentDuration;
-                            }
-
-                            @Override
-                            public long expireAfterRead(Tuple<String, Object> stringObjectTuple, Object value, long currentTime, long currentDuration) {
-                                return currentDuration;
-                            }
-                        })
-                        .build();
-            } else {
-                this.cache = Caffeine.newBuilder()
-                        .maximumSize(cacheSize)
-                        .build();
-            }
-        }
+    final Object key = coordinates.get(KEY);
+    if (StringUtils.isBlank(key.toString())) {
+      return Optional.empty();
     }
 
-    @Override
-    public Optional<String> lookup(Map<String, Object> coordinates) throws LookupFailureException {
-        return lookup(coordinates, null);
-    }
+    final String tableName = getProperty(TABLE_NAME).evaluateAttributeExpressions(context).getValue();
+    final String lookupValueColumn = getProperty(LOOKUP_VALUE_COLUMN).evaluateAttributeExpressions(context).getValue();
 
-    @Override
-    public Optional<String> lookup(Map<String, Object> coordinates, Map<String, String> context) throws LookupFailureException {
-        if (coordinates == null) {
-            return Optional.empty();
-        }
+    Tuple<String, Object> cacheLookupKey = new Tuple<>(tableName, key);
 
-        final Object key = coordinates.get(KEY);
-        if (StringUtils.isBlank(key.toString())) {
-            return Optional.empty();
-        }
+    // Not using the function param of cache.get so we can catch and handle the checked exceptions
+    String foundRecord = cache.get(cacheLookupKey, k -> null);
 
-        final String tableName = getProperty(TABLE_NAME).evaluateAttributeExpressions(context).getValue();
-        final String lookupValueColumn = getProperty(LOOKUP_VALUE_COLUMN).evaluateAttributeExpressions(context).getValue();
+    if (foundRecord == null) {
+      final String selectQuery = "SELECT " + lookupValueColumn + " FROM " + tableName + " WHERE " + lookupKeyColumn + " = ?";
+      try (final Connection con = dbcpService.getConnection(context);
+           final PreparedStatement st = con.prepareStatement(selectQuery)) {
 
-        Tuple<String, Object> cacheLookupKey = new Tuple<>(tableName, key);
+        st.setObject(1, key);
+        ResultSet resultSet = st.executeQuery();
 
-        // Not using the function param of cache.get so we can catch and handle the checked exceptions
-        String foundRecord = cache.get(cacheLookupKey, k -> null);
-
-        if (foundRecord == null) {
-            final String selectQuery = "SELECT " + lookupValueColumn + " FROM " + tableName + " WHERE " + lookupKeyColumn + " = ?";
-            try (final Connection con = dbcpService.getConnection(context);
-                 final PreparedStatement st = con.prepareStatement(selectQuery)) {
-
-                st.setObject(1, key);
-                ResultSet resultSet = st.executeQuery();
-
-                if (!resultSet.next()) {
-                    return Optional.empty();
-                }
-
-                Object o = resultSet.getObject(lookupValueColumn);
-                if (o == null) {
-                    return Optional.empty();
-                }
-                foundRecord = o.toString();
-
-                // Populate the cache if the record is present
-                if (foundRecord != null) {
-                    cache.put(cacheLookupKey, foundRecord);
-                }
-
-            } catch (SQLException se) {
-                throw new LookupFailureException("Error executing SQL statement: " + selectQuery + "for value " + key.toString()
-                        + " : " + (se.getCause() == null ? se.getMessage() : se.getCause().getMessage()), se);
-            }
+        if (!resultSet.next()) {
+          return Optional.empty();
         }
 
-        return Optional.ofNullable(foundRecord);
+        Object o = resultSet.getObject(lookupValueColumn);
+        if (o == null) {
+          return Optional.empty();
+        }
+        foundRecord = o.toString();
+
+        // Populate the cache if the record is present
+        if (foundRecord != null) {
+          cache.put(cacheLookupKey, foundRecord);
+        }
+
+      } catch (SQLException se) {
+        throw new LookupFailureException("Error executing SQL statement: " + selectQuery + "for value " + key.toString()
+                + " : " + (se.getCause() == null ? se.getMessage() : se.getCause().getMessage()), se);
+      }
     }
 
-    @Override
-    public Set<String> getRequiredKeys() {
-        return REQUIRED_KEYS;
-    }
+    return Optional.ofNullable(foundRecord);
+  }
+
+  @Override
+  public Set<String> getRequiredKeys() {
+    return REQUIRED_KEYS;
+  }
 }

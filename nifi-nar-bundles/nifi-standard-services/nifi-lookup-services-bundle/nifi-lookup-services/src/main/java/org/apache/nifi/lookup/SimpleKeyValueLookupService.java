@@ -36,49 +36,49 @@ import java.util.stream.Stream;
 
 @Tags({"lookup", "enrich", "key", "value"})
 @CapabilityDescription("Allows users to add key/value pairs as User-defined Properties. Each property that is added can be looked up by Property Name. "
-    + "The coordinates that are passed to the lookup must contain the key 'key'.")
+        + "The coordinates that are passed to the lookup must contain the key 'key'.")
 @DynamicProperty(name = "A key that can be looked up", value = "The value for the key", expressionLanguageScope = ExpressionLanguageScope.VARIABLE_REGISTRY,
         description = "Allows users to add key/value pairs as User-defined Properties. Each property that is added can be looked up by Property Name. "
                 + "The coordinates that are passed to the lookup must contain the key 'key'.")
 public class SimpleKeyValueLookupService extends AbstractControllerService implements StringLookupService {
-    private static final String KEY = "key";
-    private static final Set<String> REQUIRED_KEYS = Stream.of(KEY).collect(Collectors.toSet());
-    private volatile Map<String, String> lookupValues = new HashMap<>();
+  private static final String KEY = "key";
+  private static final Set<String> REQUIRED_KEYS = Stream.of(KEY).collect(Collectors.toSet());
+  private volatile Map<String, String> lookupValues = new HashMap<>();
 
-    @Override
-    protected PropertyDescriptor getSupportedDynamicPropertyDescriptor(final String propertyDescriptorName) {
-        return new PropertyDescriptor.Builder()
+  @Override
+  protected PropertyDescriptor getSupportedDynamicPropertyDescriptor(final String propertyDescriptorName) {
+    return new PropertyDescriptor.Builder()
             .name(propertyDescriptorName)
             .required(false)
             .dynamic(true)
             .addValidator(Validator.VALID)
             .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
             .build();
-    }
+  }
 
-    @OnEnabled
-    public void cacheConfiguredValues(final ConfigurationContext context) {
-        lookupValues = context.getProperties().entrySet().stream()
+  @OnEnabled
+  public void cacheConfiguredValues(final ConfigurationContext context) {
+    lookupValues = context.getProperties().entrySet().stream()
             .collect(Collectors.toMap(entry -> entry.getKey().getName(), entry -> context.getProperty(entry.getKey()).evaluateAttributeExpressions().getValue()));
+  }
+
+  @Override
+  public Optional<String> lookup(final Map<String, Object> coordinates) {
+    if (coordinates == null) {
+      return Optional.empty();
     }
 
-    @Override
-    public Optional<String> lookup(final Map<String, Object> coordinates) {
-        if (coordinates == null) {
-            return Optional.empty();
-        }
-
-        final String key = coordinates.get(KEY).toString();
-        if (key == null) {
-            return Optional.empty();
-        }
-
-        return Optional.ofNullable(lookupValues.get(key));
+    final String key = coordinates.get(KEY).toString();
+    if (key == null) {
+      return Optional.empty();
     }
 
-    @Override
-    public Set<String> getRequiredKeys() {
-        return REQUIRED_KEYS;
-    }
+    return Optional.ofNullable(lookupValues.get(key));
+  }
+
+  @Override
+  public Set<String> getRequiredKeys() {
+    return REQUIRED_KEYS;
+  }
 
 }

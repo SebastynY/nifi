@@ -1,2 +1,1 @@
-org.apache.nifi.processors.CustomProcessor
-org.apache.nifi.processors.LogProcessorMost
+org.apache.nifi.processors.IFlow

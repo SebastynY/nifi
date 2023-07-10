@@ -39,115 +39,109 @@ import org.apache.nifi.reporting.InitializationException;
 
 import java.io.File;
 import java.lang.reflect.ParameterizedType;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
  * This abstract class defines a generic {@link LookupService} backed by an
  * Apache Commons Configuration {@link FileBasedConfiguration}.
- *
  */
 public abstract class CommonsConfigurationLookupService<T extends FileBasedConfiguration> extends AbstractControllerService implements StringLookupService {
 
-    private static final String KEY = "key";
+  private static final String KEY = "key";
 
-    private static final Set<String> REQUIRED_KEYS = Collections.unmodifiableSet(Stream.of(KEY).collect(Collectors.toSet()));
+  private static final Set<String> REQUIRED_KEYS = Collections.unmodifiableSet(Stream.of(KEY).collect(Collectors.toSet()));
 
-    public static final PropertyDescriptor CONFIGURATION_FILE =
-        new PropertyDescriptor.Builder()
-            .name("configuration-file")
-            .displayName("Configuration File")
-            .description("A configuration file")
-            .required(true)
-            .identifiesExternalResource(ResourceCardinality.SINGLE, ResourceType.FILE)
-            .addValidator(new XXEValidator())
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
-            .build();
+  public static final PropertyDescriptor CONFIGURATION_FILE =
+          new PropertyDescriptor.Builder()
+                  .name("configuration-file")
+                  .displayName("Configuration File")
+                  .description("A configuration file")
+                  .required(true)
+                  .identifiesExternalResource(ResourceCardinality.SINGLE, ResourceType.FILE)
+                  .addValidator(new XXEValidator())
+                  .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+                  .build();
 
-    private final Class<T> resultClass = (Class<T>) ((ParameterizedType) getClass().getGenericSuperclass()).getActualTypeArguments()[0];
+  private final Class<T> resultClass = (Class<T>) ((ParameterizedType) getClass().getGenericSuperclass()).getActualTypeArguments()[0];
 
-    private List<PropertyDescriptor> properties;
+  private List<PropertyDescriptor> properties;
 
-    private volatile ReloadingFileBasedConfigurationBuilder<T> builder;
+  private volatile ReloadingFileBasedConfigurationBuilder<T> builder;
 
-    private Configuration getConfiguration() throws LookupFailureException {
-        try {
-            if (builder != null) {
-                return builder.getConfiguration();
-            }
-        } catch (final ConfigurationException e) {
-            throw new LookupFailureException("Failed to get configuration due to " + e.getMessage(), e);
-        }
-        return null;
+  private Configuration getConfiguration() throws LookupFailureException {
+    try {
+      if (builder != null) {
+        return builder.getConfiguration();
+      }
+    } catch (final ConfigurationException e) {
+      throw new LookupFailureException("Failed to get configuration due to " + e.getMessage(), e);
     }
+    return null;
+  }
 
-    @Override
-    protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
-    }
+  @Override
+  protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
+    return properties;
+  }
 
-    @Override
-    protected void init(final ControllerServiceInitializationContext context) throws InitializationException {
-        final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(CONFIGURATION_FILE);
-        this.properties = Collections.unmodifiableList(properties);
-    }
+  @Override
+  protected void init(final ControllerServiceInitializationContext context) throws InitializationException {
+    final List<PropertyDescriptor> properties = new ArrayList<>();
+    properties.add(CONFIGURATION_FILE);
+    this.properties = Collections.unmodifiableList(properties);
+  }
 
-    @OnEnabled
-    public void onEnabled(final ConfigurationContext context) throws InitializationException {
-        final String config = context.getProperty(CONFIGURATION_FILE).evaluateAttributeExpressions().getValue();
-        final FileBasedBuilderParameters params = new Parameters().fileBased().setFile(new File(config));
-        this.builder = new ReloadingFileBasedConfigurationBuilder<>(resultClass).configure(params);
-        builder.addEventListener(ConfigurationBuilderEvent.CONFIGURATION_REQUEST,
+  @OnEnabled
+  public void onEnabled(final ConfigurationContext context) throws InitializationException {
+    final String config = context.getProperty(CONFIGURATION_FILE).evaluateAttributeExpressions().getValue();
+    final FileBasedBuilderParameters params = new Parameters().fileBased().setFile(new File(config));
+    this.builder = new ReloadingFileBasedConfigurationBuilder<>(resultClass).configure(params);
+    builder.addEventListener(ConfigurationBuilderEvent.CONFIGURATION_REQUEST,
             new EventListener<ConfigurationBuilderEvent>() {
-                @Override
-                public void onEvent(ConfigurationBuilderEvent event) {
-                    if (builder.getReloadingController().checkForReloading(null)) {
-                        getLogger().debug("Reloading " + config);
-                    }
+              @Override
+              public void onEvent(ConfigurationBuilderEvent event) {
+                if (builder.getReloadingController().checkForReloading(null)) {
+                  getLogger().debug("Reloading " + config);
                 }
+              }
             });
 
-        try {
-            // Try getting configuration to see if there is any issue, for example wrong file format.
-            // Then throw InitializationException to keep this service in 'Enabling' state.
-            builder.getConfiguration();
-        } catch (ConfigurationException e) {
-            throw new InitializationException(e);
-        }
+    try {
+      // Try getting configuration to see if there is any issue, for example wrong file format.
+      // Then throw InitializationException to keep this service in 'Enabling' state.
+      builder.getConfiguration();
+    } catch (ConfigurationException e) {
+      throw new InitializationException(e);
+    }
+  }
+
+  @Override
+  public Optional<String> lookup(final Map<String, Object> coordinates) throws LookupFailureException {
+    if (coordinates == null) {
+      return Optional.empty();
     }
 
-    @Override
-    public Optional<String> lookup(final Map<String, Object> coordinates) throws LookupFailureException {
-        if (coordinates == null) {
-            return Optional.empty();
-        }
-
-        final String key = coordinates.get(KEY).toString();
-        if (StringUtils.isBlank(key)) {
-            return Optional.empty();
-        }
-
-        final Configuration config = getConfiguration();
-        if (config != null) {
-            final Object value = config.getProperty(key);
-            if (value != null) {
-                return Optional.of(String.valueOf(value));
-            }
-        }
-
-        return Optional.empty();
+    final String key = coordinates.get(KEY).toString();
+    if (StringUtils.isBlank(key)) {
+      return Optional.empty();
     }
 
-    @Override
-    public Set<String> getRequiredKeys() {
-        return REQUIRED_KEYS;
+    final Configuration config = getConfiguration();
+    if (config != null) {
+      final Object value = config.getProperty(key);
+      if (value != null) {
+        return Optional.of(String.valueOf(value));
+      }
     }
+
+    return Optional.empty();
+  }
+
+  @Override
+  public Set<String> getRequiredKeys() {
+    return REQUIRED_KEYS;
+  }
 
 }

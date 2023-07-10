@@ -49,91 +49,91 @@ import static org.apache.nifi.couchbase.CouchbaseConfigurationProperties.DOCUMEN
         + " The coordinates that are passed to the lookup must contain the key 'key'.")
 public class CouchbaseRecordLookupService extends AbstractCouchbaseLookupService implements RecordLookupService {
 
-    private volatile RecordReaderFactory readerFactory;
-    private volatile DocumentType documentType;
+  private volatile RecordReaderFactory readerFactory;
+  private volatile DocumentType documentType;
 
-    private static final PropertyDescriptor RECORD_READER = new PropertyDescriptor.Builder()
-            .name("record-reader")
-            .displayName("Record Reader")
-            .description("The Record Reader to use for parsing fetched document from Couchbase Server.")
-            .identifiesControllerService(RecordReaderFactory.class)
-            .required(true)
-            .build();
+  private static final PropertyDescriptor RECORD_READER = new PropertyDescriptor.Builder()
+          .name("record-reader")
+          .displayName("Record Reader")
+          .description("The Record Reader to use for parsing fetched document from Couchbase Server.")
+          .identifiesControllerService(RecordReaderFactory.class)
+          .required(true)
+          .build();
 
-    @Override
-    protected void addProperties(List<PropertyDescriptor> properties) {
-        properties.add(DOCUMENT_TYPE);
-        properties.add(RECORD_READER);
+  @Override
+  protected void addProperties(List<PropertyDescriptor> properties) {
+    properties.add(DOCUMENT_TYPE);
+    properties.add(RECORD_READER);
+  }
+
+  @OnEnabled
+  public void onEnabled(final ConfigurationContext context) throws InitializationException {
+    super.onEnabled(context);
+    readerFactory = context.getProperty(RECORD_READER).asControllerService(RecordReaderFactory.class);
+    documentType = DocumentType.valueOf(context.getProperty(DOCUMENT_TYPE).getValue());
+  }
+
+  @Override
+  public Optional<Record> lookup(Map<String, Object> coordinates) throws LookupFailureException {
+
+    final Bucket bucket = couchbaseClusterService.openBucket(bucketName);
+    final Optional<String> docId = Optional.ofNullable(coordinates.get(KEY)).map(Object::toString);
+
+    final Optional<InputStream> inputStream;
+    try {
+      switch (documentType) {
+
+        case Binary:
+          inputStream = docId
+                  .map(key -> bucket.get(key, BinaryDocument.class))
+                  .map(doc -> new ByteBufInputStream(doc.content()));
+          break;
+
+        case Json:
+          inputStream = docId
+                  .map(key -> bucket.get(key, RawJsonDocument.class))
+                  .map(doc -> new ByteArrayInputStream(doc.content().getBytes(StandardCharsets.UTF_8)));
+          break;
+
+        default:
+          return Optional.empty();
+      }
+    } catch (CouchbaseException e) {
+      throw new LookupFailureException("Failed to lookup from Couchbase using this coordinates: " + coordinates);
     }
 
-    @OnEnabled
-    public void onEnabled(final ConfigurationContext context) throws InitializationException {
-        super.onEnabled(context);
-        readerFactory = context.getProperty(RECORD_READER).asControllerService(RecordReaderFactory.class);
-        documentType = DocumentType.valueOf(context.getProperty(DOCUMENT_TYPE).getValue());
-    }
-
-    @Override
-    public Optional<Record> lookup(Map<String, Object> coordinates) throws LookupFailureException {
-
-        final Bucket bucket = couchbaseClusterService.openBucket(bucketName);
-        final Optional<String> docId = Optional.ofNullable(coordinates.get(KEY)).map(Object::toString);
-
-        final Optional<InputStream> inputStream;
-        try {
-            switch (documentType) {
-
-                case Binary:
-                    inputStream = docId
-                            .map(key -> bucket.get(key, BinaryDocument.class))
-                            .map(doc -> new ByteBufInputStream(doc.content()));
-                    break;
-
-                case Json:
-                    inputStream= docId
-                            .map(key -> bucket.get(key, RawJsonDocument.class))
-                            .map(doc -> new ByteArrayInputStream(doc.content().getBytes(StandardCharsets.UTF_8)));
-                    break;
-
-                default:
-                    return Optional.empty();
-            }
-        } catch (CouchbaseException e) {
-            throw new LookupFailureException("Failed to lookup from Couchbase using this coordinates: " + coordinates);
-        }
-
-        final Optional<Tuple<Exception, RecordReader>> errOrReader = inputStream.map(in -> {
-            try {
-                // Pass coordinates to initiate RecordReader, so that the reader can resolve schema dynamically.
-                // This allow using the same RecordReader service with different schemas if RecordReader is configured to
-                // access schema based on Expression Language.
-                final Map<String, String> recordReaderVariables = new HashMap<>(coordinates.size());
-                coordinates.keySet().forEach(k -> {
-                    final Object value = coordinates.get(k);
-                    if (value != null) {
-                        recordReaderVariables.put(k, value.toString());
-                    }
-                });
-                return new Tuple<>(null, readerFactory.createRecordReader(recordReaderVariables, in, -1, getLogger()));
-            } catch (Exception e) {
-                return new Tuple<>(e, null);
-            }
+    final Optional<Tuple<Exception, RecordReader>> errOrReader = inputStream.map(in -> {
+      try {
+        // Pass coordinates to initiate RecordReader, so that the reader can resolve schema dynamically.
+        // This allow using the same RecordReader service with different schemas if RecordReader is configured to
+        // access schema based on Expression Language.
+        final Map<String, String> recordReaderVariables = new HashMap<>(coordinates.size());
+        coordinates.keySet().forEach(k -> {
+          final Object value = coordinates.get(k);
+          if (value != null) {
+            recordReaderVariables.put(k, value.toString());
+          }
         });
+        return new Tuple<>(null, readerFactory.createRecordReader(recordReaderVariables, in, -1, getLogger()));
+      } catch (Exception e) {
+        return new Tuple<>(e, null);
+      }
+    });
 
-        if (!errOrReader.isPresent()) {
-            return Optional.empty();
-        }
-
-        final Exception exception = errOrReader.get().getKey();
-        if (exception != null) {
-            throw new LookupFailureException(String.format("Failed to lookup with %s", coordinates), exception);
-        }
-
-        try {
-            return Optional.ofNullable(errOrReader.get().getValue().nextRecord());
-        } catch (Exception e) {
-            throw new LookupFailureException(String.format("Failed to read Record when looking up with %s", coordinates), e);
-        }
+    if (!errOrReader.isPresent()) {
+      return Optional.empty();
     }
+
+    final Exception exception = errOrReader.get().getKey();
+    if (exception != null) {
+      throw new LookupFailureException(String.format("Failed to lookup with %s", coordinates), exception);
+    }
+
+    try {
+      return Optional.ofNullable(errOrReader.get().getValue().nextRecord());
+    } catch (Exception e) {
+      throw new LookupFailureException(String.format("Failed to read Record when looking up with %s", coordinates), e);
+    }
+  }
 
 }

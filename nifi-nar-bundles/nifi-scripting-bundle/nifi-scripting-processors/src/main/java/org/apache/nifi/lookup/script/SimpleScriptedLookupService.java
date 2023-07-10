@@ -51,16 +51,16 @@ import java.util.Set;
 )
 public class SimpleScriptedLookupService extends BaseScriptedLookupService implements StringLookupService {
 
-    @Override
-    @SuppressWarnings("unchecked")
-    public Set<String> getRequiredKeys() {
-        return lookupService.get().getRequiredKeys();
-    }
+  @Override
+  @SuppressWarnings("unchecked")
+  public Set<String> getRequiredKeys() {
+    return lookupService.get().getRequiredKeys();
+  }
 
-    @Override
-    @SuppressWarnings("unchecked")
-    public Optional<String> lookup(Map<String, Object> coordinates) throws LookupFailureException {
-        // Delegate the lookup() call to the scripted LookupService
-        return lookupService.get().lookup(coordinates);
-    }
+  @Override
+  @SuppressWarnings("unchecked")
+  public Optional<String> lookup(Map<String, Object> coordinates) throws LookupFailureException {
+    // Delegate the lookup() call to the scripted LookupService
+    return lookupService.get().lookup(coordinates);
+  }
 }

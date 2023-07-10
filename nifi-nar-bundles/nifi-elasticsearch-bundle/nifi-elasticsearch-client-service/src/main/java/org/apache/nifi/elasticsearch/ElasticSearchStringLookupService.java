@@ -30,76 +30,71 @@ import org.apache.nifi.lookup.StringLookupService;
 import org.apache.nifi.processor.util.StandardValidators;
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 @CapabilityDescription("Lookup a string value from Elasticsearch Server associated with the specified document ID. " +
         "The coordinates that are passed to the lookup must contain the key 'id'.")
 @Tags({"lookup", "enrich", "value", "key", "elasticsearch"})
 public class ElasticSearchStringLookupService extends AbstractControllerService implements StringLookupService {
-    public static final PropertyDescriptor CLIENT_SERVICE = new PropertyDescriptor.Builder()
-            .name("el-rest-client-service")
-            .displayName("Client Service")
-            .description("An ElasticSearch client service to use for running queries.")
-            .identifiesControllerService(ElasticSearchClientService.class)
-            .required(true)
-            .build();
-    public static final PropertyDescriptor INDEX = new PropertyDescriptor.Builder()
-            .name("el-lookup-index")
-            .displayName("Index")
-            .description("The name of the index to read from")
-            .required(true)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .build();
-    public static final PropertyDescriptor TYPE = new PropertyDescriptor.Builder()
-            .name("el-lookup-type")
-            .displayName("Type")
-            .description("The type of this document (used by Elasticsearch for indexing and searching)")
-            .required(false)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .build();
-    private static final List<PropertyDescriptor> DESCRIPTORS = Arrays.asList(CLIENT_SERVICE, INDEX, TYPE);
-    private static final ObjectMapper mapper = new ObjectMapper();
-    public static final String ID = "es_document_id";
-    private ElasticSearchClientService esClient;
-    private String index;
-    private String type;
+  public static final PropertyDescriptor CLIENT_SERVICE = new PropertyDescriptor.Builder()
+          .name("el-rest-client-service")
+          .displayName("Client Service")
+          .description("An ElasticSearch client service to use for running queries.")
+          .identifiesControllerService(ElasticSearchClientService.class)
+          .required(true)
+          .build();
+  public static final PropertyDescriptor INDEX = new PropertyDescriptor.Builder()
+          .name("el-lookup-index")
+          .displayName("Index")
+          .description("The name of the index to read from")
+          .required(true)
+          .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+          .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+          .build();
+  public static final PropertyDescriptor TYPE = new PropertyDescriptor.Builder()
+          .name("el-lookup-type")
+          .displayName("Type")
+          .description("The type of this document (used by Elasticsearch for indexing and searching)")
+          .required(false)
+          .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+          .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+          .build();
+  private static final List<PropertyDescriptor> DESCRIPTORS = Arrays.asList(CLIENT_SERVICE, INDEX, TYPE);
+  private static final ObjectMapper mapper = new ObjectMapper();
+  public static final String ID = "es_document_id";
+  private ElasticSearchClientService esClient;
+  private String index;
+  private String type;
 
-    @Override
-    protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return DESCRIPTORS;
-    }
+  @Override
+  protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
+    return DESCRIPTORS;
+  }
 
-    @OnEnabled
-    public void onEnabled(final ConfigurationContext context) {
-        esClient = context.getProperty(CLIENT_SERVICE).asControllerService(ElasticSearchClientService.class);
-        index = context.getProperty(INDEX).evaluateAttributeExpressions().getValue();
-        type = context.getProperty(TYPE).evaluateAttributeExpressions().getValue();
-    }
+  @OnEnabled
+  public void onEnabled(final ConfigurationContext context) {
+    esClient = context.getProperty(CLIENT_SERVICE).asControllerService(ElasticSearchClientService.class);
+    index = context.getProperty(INDEX).evaluateAttributeExpressions().getValue();
+    type = context.getProperty(TYPE).evaluateAttributeExpressions().getValue();
+  }
 
-    @Override
-    public Optional<String> lookup(final Map<String, Object> coordinates) throws LookupFailureException {
-        try {
-            final String id = (String) coordinates.get(ID);
-            final Map<String, Object> enums = esClient.get(index, type, id, null);
-            if (enums == null) {
-                return Optional.empty();
-            } else {
-                return Optional.ofNullable(mapper.writeValueAsString(enums));
-            }
-        } catch (final IOException | ElasticsearchException e) {
-            throw new LookupFailureException(e);
-        }
+  @Override
+  public Optional<String> lookup(final Map<String, Object> coordinates) throws LookupFailureException {
+    try {
+      final String id = (String) coordinates.get(ID);
+      final Map<String, Object> enums = esClient.get(index, type, id, null);
+      if (enums == null) {
+        return Optional.empty();
+      } else {
+        return Optional.ofNullable(mapper.writeValueAsString(enums));
+      }
+    } catch (final IOException | ElasticsearchException e) {
+      throw new LookupFailureException(e);
     }
+  }
 
-    @Override
-    public Set<String> getRequiredKeys() {
-        return Collections.singleton(ID);
-    }
+  @Override
+  public Set<String> getRequiredKeys() {
+    return Collections.singleton(ID);
+  }
 }

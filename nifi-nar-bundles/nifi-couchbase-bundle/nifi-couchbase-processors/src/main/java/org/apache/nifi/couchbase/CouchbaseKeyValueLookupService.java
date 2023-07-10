@@ -40,44 +40,44 @@ import static org.apache.nifi.couchbase.CouchbaseConfigurationProperties.LOOKUP_
         + " The coordinates that are passed to the lookup must contain the key 'key'.")
 public class CouchbaseKeyValueLookupService extends AbstractCouchbaseLookupService implements StringLookupService {
 
-    private volatile String subDocPath;
+  private volatile String subDocPath;
 
-    @Override
-    protected void addProperties(List<PropertyDescriptor> properties) {
-        properties.add(LOOKUP_SUB_DOC_PATH);
+  @Override
+  protected void addProperties(List<PropertyDescriptor> properties) {
+    properties.add(LOOKUP_SUB_DOC_PATH);
+  }
+
+  @OnEnabled
+  public void onEnabled(final ConfigurationContext context) throws InitializationException {
+    super.onEnabled(context);
+    subDocPath = context.getProperty(LOOKUP_SUB_DOC_PATH).evaluateAttributeExpressions().getValue();
+  }
+
+  @Override
+  public Optional<String> lookup(Map<String, Object> coordinates) throws LookupFailureException {
+
+    try {
+      final Bucket bucket = couchbaseClusterService.openBucket(bucketName);
+      final Optional<String> docId = Optional.ofNullable(coordinates.get(KEY)).map(Object::toString);
+
+      if (!StringUtils.isBlank(subDocPath)) {
+        return docId.map(key -> {
+          try {
+            return bucket.lookupIn(key).get(subDocPath).execute();
+          } catch (DocumentDoesNotExistException e) {
+            getLogger().debug("Document was not found for {}", new Object[]{key});
+            return null;
+          }
+        }).map(fragment -> fragment.content(0)).map(Object::toString);
+
+      } else {
+        return docId.map(key -> CouchbaseUtils.getStringContent(bucket, key));
+      }
+    } catch (CouchbaseException e) {
+      throw new LookupFailureException("Failed to lookup from Couchbase using this coordinates: " + coordinates);
     }
 
-    @OnEnabled
-    public void onEnabled(final ConfigurationContext context) throws InitializationException {
-        super.onEnabled(context);
-        subDocPath = context.getProperty(LOOKUP_SUB_DOC_PATH).evaluateAttributeExpressions().getValue();
-    }
 
-    @Override
-    public Optional<String> lookup(Map<String, Object> coordinates) throws LookupFailureException {
-
-        try {
-            final Bucket bucket = couchbaseClusterService.openBucket(bucketName);
-            final Optional<String> docId = Optional.ofNullable(coordinates.get(KEY)).map(Object::toString);
-
-            if (!StringUtils.isBlank(subDocPath)) {
-                return docId.map(key -> {
-                    try {
-                        return bucket.lookupIn(key).get(subDocPath).execute();
-                    } catch (DocumentDoesNotExistException e) {
-                        getLogger().debug("Document was not found for {}", new Object[]{key});
-                        return null;
-                    }
-                }).map(fragment -> fragment.content(0)).map(Object::toString);
-
-            } else {
-                return docId.map(key -> CouchbaseUtils.getStringContent(bucket, key));
-            }
-        } catch (CouchbaseException e) {
-            throw new LookupFailureException("Failed to lookup from Couchbase using this coordinates: " + coordinates);
-        }
-
-
-    }
+  }
 
 }
