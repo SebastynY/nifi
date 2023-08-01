@@ -16,9 +16,11 @@
  */
 package org.apache.nifi.distributed.cache.client;
 
-import java.io.IOException;
-
 import org.apache.nifi.distributed.cache.client.exception.DeserializationException;
+import org.apache.nifi.distributed.cache.client.exception.SerializationException;
+
+import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * Provides an interface for deserializing an array of bytes into an Object
@@ -27,15 +29,17 @@ import org.apache.nifi.distributed.cache.client.exception.DeserializationExcepti
  */
 public interface Deserializer<T> {
 
-    /**
-     * Deserializes the given byte array input an Object and returns that value.
-     *
-     * @param input input
-     * @return returns deserialized value
-     * @throws DeserializationException if a valid object cannot be deserialized
-     * from the given byte array
-     * @throws java.io.IOException ex
-     */
-    T deserialize(byte[] input) throws DeserializationException, IOException;
+  String deserialize(InputStream in) throws IOException, SerializationException;
+
+  /**
+   * Deserializes the given byte array input an Object and returns that value.
+   *
+   * @param input input
+   * @return returns deserialized value
+   * @throws DeserializationException if a valid object cannot be deserialized
+   *                                  from the given byte array
+   * @throws java.io.IOException      ex
+   */
+  T deserialize(byte[] input) throws DeserializationException, IOException;
 
 }

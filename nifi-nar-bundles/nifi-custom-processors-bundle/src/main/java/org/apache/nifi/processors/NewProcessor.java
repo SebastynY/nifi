@@ -8,7 +8,6 @@ import org.apache.nifi.distributed.cache.client.DistributedMapCacheClient;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.logging.LogLevel;
-import org.apache.nifi.lookup.StringLookupService;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -341,12 +340,11 @@ public class NewProcessor extends AbstractProcessor {
     return nodeListContent;
   }
 
-  public void graylogNotify(FlowFile flowFile, String xformEntity, StringLookupService receiverServiceId) throws Exception {
+  void graylogNotify(FlowFile flowFile, String xformEntity) throws Exception {
     String sender = flowFile.getAttribute("http.query.param.senderService");
     if (sender == null) {
       sender = "Не указан";
     }
-
     String processGroupId = "60484390-d08c-1fe2-b9a9-d47458b352ee";
     String processGroupName = "Transform";
     String hostName = InetAddress.getLocalHost().getHostName();
@@ -354,8 +352,7 @@ public class NewProcessor extends AbstractProcessor {
     String uuid = flowFile.getAttribute("uuid");
     String pathVal = flowFile.getAttribute("path");
     String requestUri = flowFile.getAttribute("http.request.uri");
-
-    if ("/sap/xi".equals(requestUri)) {
+    if (requestUri.equals("/sap/xi")) {
       requestUri = flowFile.getAttribute("sap.Interface.value");
     }
 
@@ -371,17 +368,18 @@ public class NewProcessor extends AbstractProcessor {
 
     //Определение получателя
     String receiver = "Не определен";
+//    StringLookupService receiverLookup = receiverServiceId.asControllerService(StringLookupService.class);
+//
+//    if (receiverLookup != null) {
+//      Map<String, Object> coordinate = new HashMap<>();
+//      coordinate.put("key", requestUri);
+//      Optional<String> value = receiverLookup.lookup(coordinate);
+//      if (value.isPresent()) {
+//        receiver = value.get();
+//      }
+//    }
 
-    if ((StringLookupService) receiverServiceId != null) {
-      Map<String, Object> coordinate = new HashMap<>();
-      coordinate.put("key", requestUri);
-      Optional<String> value = ((StringLookupService) receiverServiceId).lookup(coordinate);
-      if (value.isPresent()) {
-        receiver = value.get();
-      }
-    }
-
-    if ("attribute".equals(receiver)) {
+    if (receiver.equals("attribute")) {
       receiver = flowFile.getAttribute("Receiver");
     }
     if (receiver == null) {
@@ -397,33 +395,40 @@ public class NewProcessor extends AbstractProcessor {
     //Формирование GELF-сообщения
     String shortMessage = "Сообщение в [" + processGroupName + "] c filename [" + fileName + "], бизнес-процесс [" + businessProcessName + "], отправитель [" + sender + "], получатель [" + receiver + ']';
 
-    JSONObject map = createLogEntryJSONObject(sender, processGroupId, processGroupName, hostName, fileName, uuid, pathVal, requestUri, receiver, shortMessage);
-    map.put("_entryType", "processing");
-    map.put("_businessProcess", businessProcessName);
-    map.put("specification", specUrl);
-    map.put("transformationEntity", xformEntity);
-    map.put("transformationPath", xformPath);
-    map.put("transformationStage", xformStage);
+    JSONObject json = new JSONObject();
+    json.put("_fileName", fileName);
+    json.put("path", pathVal);
+    json.put("short_message", shortMessage);
+    json.put("host", hostName);
+    json.put("facility", processGroupName);
+    json.put("_groupId", processGroupId);
+    json.put("level", "INFO");
+    json.put("_groupName", processGroupName);
+    json.put("_messageUuid", uuid);
+    json.put("_requestUrl", requestUri);
+    json.put("_sender", sender);
+    json.put("_receiver", receiver);
+    json.put("_entryType", "processing");
+    json.put("_businessProcess", businessProcessName);
+    json.put("specification", specUrl);
+    json.put("transformationEntity", xformEntity);
+    json.put("transformationPath", xformPath);
+    json.put("transformationStage", xformStage);
 
-    String json = map.toString();
-
-    URL url = new URL("http://1tesb-s-grl01.gk.rosatom.local:12001/gelf");
-    HttpURLConnection post = (HttpURLConnection) url.openConnection();
+    //Отправка GELF-сообщения
+    HttpURLConnection post = (HttpURLConnection) new URL("http://1tesb-s-grl01.gk.rosatom.local:12001/gelf").openConnection();
     post.setRequestMethod("POST");
     post.setDoOutput(true);
     post.setRequestProperty("Content-Type", "application/json");
-    try (OutputStream os = post.getOutputStream()) {
-      byte[] input = json.getBytes(StandardCharsets.UTF_8);
-      os.write(input, 0, input.length);
-    }
-
+    post.getOutputStream().write(json.toString().getBytes(StandardCharsets.UTF_8));
     int postRC = post.getResponseCode();
     if (postRC < 200 || postRC > 300) {
       throw new Exception("Ошибка отправки, код " + postRC);
     }
   }
 
-  public void graylogNotifyStart(FlowFile flowFile, String derivationId, StringLookupService receiverServiceId) throws Exception {
+
+  public void graylogNotifyStart(FlowFile flowFile, String derivationId) throws Exception {
     String sender = flowFile.getAttribute("http.query.param.senderService");
     if (sender == null) {
       sender = "Не указан";
@@ -443,15 +448,14 @@ public class NewProcessor extends AbstractProcessor {
 
     //Определение получателя
     String receiver = "Не определен";
-    StringLookupService receiverLookup = receiverServiceId;
-    if (receiverLookup != null) {
-      Map<String, Object> coordinate = new HashMap<>();
-      coordinate.put("key", requestUri);
-      Optional<String> value = receiverLookup.lookup(coordinate);
-      if (value.isPresent()) {
-        receiver = value.get();
-      }
-    }
+//    if (receiverServiceId != null) {
+//      Map<String, Object> coordinate = new HashMap<>();
+//      coordinate.put("key", requestUri);
+//      Optional<String> value = receiverServiceId.lookup(coordinate);
+//      if (value.isPresent()) {
+//        receiver = value.get();
+//      }
+//    }
 
     if ("attribute".equals(receiver)) {
       receiver = flowFile.getAttribute("Receiver");
@@ -521,8 +525,7 @@ public class NewProcessor extends AbstractProcessor {
           JSONArray xforms,
           String targetId,
           final ProcessSession session,
-          ProcessContext context,
-          StringLookupService receiverServiceId) throws Exception {
+          ProcessContext context) throws Exception {
     boolean isFlowFileSuppressed = false;
     int prevStageIndx = -1;
     session.putAttribute(flowFile, "target.id", targetId);
@@ -587,7 +590,7 @@ public class NewProcessor extends AbstractProcessor {
             flowFile = handleApplyXslt(params, name, flowFile, session);
             break;
           case "DuplicateFlowFile":
-            handleDuplicateFlowFile(params, name, flowFile, currStageIndx, xforms, targetId, session, context, receiverServiceId);
+            handleDuplicateFlowFile(params, name, flowFile, currStageIndx, xforms, targetId, session, context);
             break;
           default:
             for (Map.Entry<String, String> entry : params.entrySet()) {
@@ -596,7 +599,7 @@ public class NewProcessor extends AbstractProcessor {
             session.putAttribute(flowFile, "xform.group", name);
         }
 
-        graylogNotify(flowFile, name, receiverServiceId);
+        graylogNotify(flowFile, name);
       }
 
       if (isPropagated) {
@@ -633,8 +636,7 @@ public class NewProcessor extends AbstractProcessor {
           JSONArray xforms,
           String targetId,
           final ProcessSession session,
-          ProcessContext context,
-          StringLookupService receiverServiceId) throws Exception {
+          ProcessContext context) throws Exception {
     String param = params.get("Number");
     if (param == null) throw new IllegalArgumentException(name + ' ' + param);
     PropertyValue propValue = context.newPropertyValue(param);
@@ -649,10 +651,10 @@ public class NewProcessor extends AbstractProcessor {
     for (int i = 0; i < numOfCopies; i++) {
       FlowFile f = session.clone(flowFile);
       f = session.putAttribute(f, "copy.index", String.valueOf(i + 1));
-      graylogNotifyStart(f, ffid, receiverServiceId);
+      graylogNotifyStart(f, ffid);
       FlowFile ff = null;
       if (currStageIndx < xforms.length() - 1) {
-        ff = processXform(f, xforms, targetId, session, context, receiverServiceId);
+        ff = processXform(f, xforms, targetId, session, context);
       }
       if (ff == null) {
         session.remove(f);
@@ -662,7 +664,7 @@ public class NewProcessor extends AbstractProcessor {
     }
     FlowFile ff = null;
     if (currStageIndx < xforms.length() - 1) {
-      ff = processXform(flowFile, xforms, targetId, session, context, receiverServiceId);
+      ff = processXform(flowFile, xforms, targetId, session, context);
       if (ff == null) {
         session.remove(flowFile);
       } else {
@@ -974,20 +976,15 @@ public class NewProcessor extends AbstractProcessor {
   }
 
 
-  void run(final ProcessSession session, ProcessContext context, StringLookupService receiverServiceId) throws Exception {
-
-
+  void run(final ProcessSession session, ProcessContext context) throws Exception {
     FlowFile flowFile = session.get();
     if (flowFile == null) {
       return;
     }
-
-
     TransformerFactory xslRemoveEnv = null;
     String traceOut = "";
-    int traceCount = 0;
     String traceOut1 = "";
-    int traceCount1 = 0;
+
 
     XPath xpath = XPathFactory.newInstance().newXPath();
     try {
@@ -996,15 +993,11 @@ public class NewProcessor extends AbstractProcessor {
       throw new RuntimeException(e);
     }
 
-    String iflowMapCacheLookupClientName = IflowMapCacheLookupClient.getPropertyDescriptors().toString();
-    String xsdMapCacheLookupClientName = XsdMapCacheLookupClient.getPropertyDescriptors().toString();
-    String xsltMapCacheLookupClientName = XsltMapCacheLookupClient.getPropertyDescriptors().toString();
-
 
     try {
-      iflowCacheMap = (Map<String, String>) getServiceController(iflowMapCacheLookupClientName);
-      xsdCacheMap = (Map<String, String>) getServiceController(xsdMapCacheLookupClientName);
-      xsltCacheMap = (Map<String, String>) getServiceController(xsltMapCacheLookupClientName);
+      iflowCacheMap = (Map<String, String>) getServiceController("IFLOW_DMC_SERVICE");
+      xsdCacheMap = (Map<String, String>) getServiceController("XSD_DMC_SERVICE");
+      xsltCacheMap = (Map<String, String>) getServiceController("XSLT_DMC_SERVICE");
 
       String ret = iflowCacheMap.get(
               flowFile.getAttribute("business.process.name")
@@ -1043,7 +1036,7 @@ public class NewProcessor extends AbstractProcessor {
               flowFile = session.putAttribute(flowFile, "target.output", "JSON");
             }
             JSONArray xform = xforms.getJSONArray(xformPath);
-            Object result = processXform(flowFile, xform, targetId, session, context, receiverServiceId);
+            Object result = processXform(flowFile, xform, targetId, session, context);
             if (result == null) {
               trace("-ff");
               session.remove(flowFile);
@@ -1145,7 +1138,7 @@ public class NewProcessor extends AbstractProcessor {
               session.putAttribute(file, "xform.path", String.valueOf(xformPath));
               f = xformPath < xforms.length() - 1 & xforms.length() > 1 ? session.clone(file) : file;
 
-              FlowFile result = processXform(f, xform, target.get("id").toString(), session, context, receiverServiceId);
+              FlowFile result = processXform(f, xform, target.get("id").toString(), session, context);
               reporter.modifyContent(f);
               if (result == null) {
                 session.remove(f);
@@ -1183,7 +1176,11 @@ public class NewProcessor extends AbstractProcessor {
 
   @Override
   public void onTrigger(ProcessContext processContext, ProcessSession processSession) throws ProcessException {
-
+    try {
+      run(processSession, processContext);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 }
 

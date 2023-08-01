@@ -16,10 +16,10 @@
  */
 package org.apache.nifi.distributed.cache.client;
 
+import org.apache.nifi.distributed.cache.client.exception.SerializationException;
+
 import java.io.IOException;
 import java.io.OutputStream;
-
-import org.apache.nifi.distributed.cache.client.exception.SerializationException;
 
 /**
  * Provides a mechanism by which a value can be serialized to a stream of bytes
@@ -28,14 +28,15 @@ import org.apache.nifi.distributed.cache.client.exception.SerializationException
  */
 public interface Serializer<T> {
 
-    /**
-     * Serializes the given value to the {@link OutputStream}
-     *
-     * @param value value
-     * @param output stream
-     * @throws SerializationException If unable to serialize the given value
-     * @throws java.io.IOException ex
-     */
-    void serialize(T value, OutputStream output) throws SerializationException, IOException;
+  /**
+   * Serializes the given value to the {@link OutputStream}
+   *
+   * @param value  value
+   * @param output stream
+   * @throws SerializationException If unable to serialize the given value
+   * @throws java.io.IOException    ex
+   */
+  void serialize(T value, OutputStream output) throws SerializationException, IOException;
 
+  void serialize(OutputStream out, String value) throws IOException;
 }
